@@ -1,5 +1,10 @@
 # WSL Dev Setup
 
+
+```Comando pra executar
+irm https://raw.githubusercontent.com/jvvls/wsl-build/main/windows/setup-windows.ps1 | iex
+```
+
 Setup de desenvolvimento com:
 
 - Windows para interface grafica e apps do dia a dia
