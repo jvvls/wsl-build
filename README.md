@@ -33,6 +33,7 @@ O script `instal.sh` prepara:
 - TypeScript, ts-node, tsx, ESLint, Prettier, Vite, live-server, htmlhint e stylelint
 - SDKMAN
 - Java 11, 17 e 21
+- Apache Spark para ETL, como instalacao opcional
 - Python 3, pip, venv, pipx e Poetry
 - Go
 - infraestrutura local de bancos via Docker Compose
@@ -134,6 +135,12 @@ Variaveis uteis:
 - `RUN_APT_UPGRADE=true`: roda `apt upgrade`
 - `CONFIGURE_WSL=false`: nao mexe no `/etc/wsl.conf`
 - `FORCE_GO_INSTALL=true`: forca reinstalacao do Go
+- `INSTALL_SPARK=ask`: pergunta durante a execucao se o Spark deve ser instalado
+- `INSTALL_SPARK=true`: instala o Spark sem perguntar
+- `INSTALL_SPARK=false`: pula a instalacao do Spark sem perguntar
+
+Ao rodar o script em terminal interativo, ele pergunta se voce quer instalar o Spark para ETL.
+Em execucoes nao interativas, como automacao ou quando nao houver terminal disponivel, use `INSTALL_SPARK=true` ou `INSTALL_SPARK=false`.
 
 ## 4. Depois da instalacao
 
@@ -404,6 +411,36 @@ Trocar de versao:
 ```bash
 sdk use java <versao>
 sdk default java <versao>
+```
+
+## Spark opcional para ETL
+
+Se voce responder `s` quando o script perguntar sobre o Spark, ele vai:
+
+- baixar o Apache Spark `3.5.1`
+- extrair em `~/apps/spark`
+- reaproveitar o Java 11 instalado pelo SDKMAN
+- adicionar `SPARK_HOME`, `SPARK_JAVA_HOME` e `PATH` no `.bashrc` e no `.zshrc`
+- gravar um `spark-env.sh` para o Spark sempre subir com o Java 11 do SDKMAN
+
+Com isso, o Spark roda com Java 11 sem sobrescrever o `JAVA_HOME` global da sua sessao.
+
+Validacao rapida depois de reabrir o terminal:
+
+```bash
+spark-submit --version
+```
+
+Execucao sem prompt:
+
+```bash
+INSTALL_SPARK=true ./instal.sh
+```
+
+Ou direto do GitHub:
+
+```bash
+INSTALL_SPARK=true curl -fsSL https://raw.githubusercontent.com/jvvls/wsl-build/main/instal.sh | bash
 ```
 
 ## Python
