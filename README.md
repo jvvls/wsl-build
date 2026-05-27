@@ -1,7 +1,7 @@
 # WSL Dev Setup
 
-
-```Comando pra executar
+Rodar o script completo com:
+```text
 irm https://raw.githubusercontent.com/jvvls/wsl-build/main/windows/setup-windows.ps1 | iex
 ```
 
