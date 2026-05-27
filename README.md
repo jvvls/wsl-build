@@ -2,7 +2,7 @@
 
 Rodar o script completo com:
 ```text
-irm https://raw.githubusercontent.com/jvvls/wsl-build/main/windows/setup-windows.ps1 | iex
+irm https://raw.githubusercontent.com/jvvls/wsl-build/main/windows/setp-windows.ps1 | iex
 ```
 
 Setup de desenvolvimento com:
@@ -27,7 +27,7 @@ Isso evita mistura de ferramentas Windows com ferramentas Linux e deixa o fluxo 
 
 ## O que este setup instala no WSL
 
-O script `instal.sh` prepara:
+O script `install.sh` prepara:
 
 - Git
 - Zsh + Oh My Zsh
@@ -45,18 +45,31 @@ O script `instal.sh` prepara:
 
 ## O que fica no Windows
 
-Instale no Windows:
+O setup automatico do Windows instala e configura:
 
 - VS Code
 - DBeaver
 - MongoDB Compass
 - Windows Terminal
+- PowerShell 7
+- Git
+- GitHub CLI
+- Brave
+- Docker Desktop
+- PowerToys
+- AutoHotkey v2
+- Flow Launcher
+- TrafficMonitor
+- HWiNFO
+- GlazeWM
 
 Opcionalmente:
 
-- navegador
 - Discord
 - Steam
+- Stremio
+- VLC
+- ferramentas NVIDIA
 - outros apps normais do sistema
 
 ## Estrutura recomendada
@@ -78,6 +91,179 @@ Evite trabalhar em:
 ```bash
 /mnt/c/Users/...
 ```
+
+## Instalacao automatica do Windows
+
+O script `windows/setp-windows.ps1` prepara uma instalacao nova do Windows 11 para usar o Windows como interface grafica e o WSL como ambiente principal de desenvolvimento.
+
+Rode em um PowerShell aberto como Administrador:
+
+```powershell
+irm https://raw.githubusercontent.com/jvvls/wsl-build/main/windows/setp-windows.ps1 | iex
+```
+
+O script faz, em ordem geral:
+
+- cria ponto de restauracao antes das mudancas
+- verifica se o `winget` esta disponivel
+- instala apps base e ferramentas de desenvolvimento pelo `winget`
+- aplica um debloat conservador do Windows 11
+- configura Git basico no Windows
+- cria arquivos de configuracao em `%USERPROFILE%\dev-setup\windows`
+- instala e inicia os keybinds do AutoHotkey
+- configura GlazeWM como window manager
+- habilita recursos do WSL2
+- instala a distro Ubuntu, se ainda nao existir
+- cria o usuario Linux baseado no usuario do Windows
+- roda o setup do WSL com `install.sh`
+- registra continuacao automatica apos reboot quando necessario
+- salva logs em `%USERPROFILE%\dev-setup-logs`
+
+### Parametros uteis
+
+Para customizar, baixe o script e rode com parametros:
+
+```powershell
+New-Item -ItemType Directory -Force -Path $env:USERPROFILE\dev-setup
+iwr https://raw.githubusercontent.com/jvvls/wsl-build/main/windows/setp-windows.ps1 -OutFile $env:USERPROFILE\dev-setup\setp-windows.ps1
+powershell -ExecutionPolicy Bypass -File $env:USERPROFILE\dev-setup\setp-windows.ps1 -InstallGamingApps $false -InstallNvidiaTools $false
+```
+
+Parametros principais:
+
+- `-WslDistro Ubuntu`: distro usada pelo WSL
+- `-WslSetupUrl <url>`: URL do script Linux que sera executado dentro do WSL
+- `-DotfilesRepo <url>`: clona dotfiles no Windows e no WSL
+- `-UseWin11Debloat $false`: pula o Win11Debloat externo
+- `-InstallNvidiaTools $false`: pula ferramentas NVIDIA
+- `-InstallGamingApps $false`: pula Steam, Discord, Stremio, VLC e runtimes de jogos
+- `-InstallDevGuiApps $false`: pula apps graficos de desenvolvimento
+- `-InstallWindowManager $false`: pula GlazeWM
+- `-ConfigureWsl $false`: nao habilita nem configura WSL
+- `-RemoveOneDrive $true`: remove OneDrive
+- `-AutoReboot $true`: reinicia automaticamente quando o Windows pedir
+
+### Reboot e retomada
+
+Algumas etapas do WSL podem exigir reboot. Quando isso acontece, o script registra uma entrada `RunOnce` chamada `JalDevSetupResume` para continuar na proxima sessao.
+
+Se preferir fazer manualmente:
+
+```powershell
+Restart-Computer
+```
+
+Depois do reboot, rode o script novamente como Administrador ou deixe a retomada automatica executar.
+
+### Arquivos gerados no Windows
+
+```text
+%USERPROFILE%\dev-setup\windows\ahk\jal-hotkeys.ahk
+%USERPROFILE%\.glzr\glazewm\config.yaml
+%USERPROFILE%\dev-setup-logs\setup-windows-*.log
+```
+
+## Keybinds personalizados
+
+O setup configura dois grupos de atalhos:
+
+- AutoHotkey: atalhos globais com `CapsLock` como tecla leader
+- GlazeWM: atalhos de foco, workspace, tiling, resize e apps
+
+### AutoHotkey
+
+`CapsLock` fica sempre desligado e passa a funcionar como leader.
+
+| Atalho | Acao |
+| --- | --- |
+| `CapsLock + t` | abre Windows Terminal |
+| `CapsLock + b` | abre Brave |
+| `CapsLock + d` | abre Discord |
+| `CapsLock + s` | abre Steam |
+| `CapsLock + e` | abre Explorer |
+| `CapsLock + c` | abre VS Code |
+| `CapsLock + f` | abre Flow Launcher |
+| `CapsLock + p` | abre PowerShell |
+| `CapsLock + q` | fecha a janela ativa |
+| `CapsLock + x` | encerra o processo da janela ativa |
+| `CapsLock + r` | recarrega o arquivo de hotkeys |
+| `CapsLock + o` | abre a pasta de configs do setup |
+
+### GlazeWM
+
+#### Navegacao de janelas
+
+| Atalho | Acao |
+| --- | --- |
+| `Alt + h` ou `Alt + Left` | foco para a esquerda |
+| `Alt + l` ou `Alt + Right` | foco para a direita |
+| `Alt + k` ou `Alt + Up` | foco para cima |
+| `Alt + j` ou `Alt + Down` | foco para baixo |
+| `Alt + Shift + h` ou `Alt + Shift + Left` | move janela para a esquerda |
+| `Alt + Shift + l` ou `Alt + Shift + Right` | move janela para a direita |
+| `Alt + Shift + k` ou `Alt + Shift + Up` | move janela para cima |
+| `Alt + Shift + j` ou `Alt + Shift + Down` | move janela para baixo |
+
+#### Resize e modos
+
+| Atalho | Acao |
+| --- | --- |
+| `Alt + u` | diminui largura |
+| `Alt + p` | aumenta largura |
+| `Alt + o` | aumenta altura |
+| `Alt + i` | diminui altura |
+| `Alt + r` | entra no modo resize |
+| `h`, `l`, `k`, `j` no modo resize | redimensiona a janela |
+| `Esc`, `Enter` ou `Alt + r` no modo resize | sai do modo resize |
+| `Alt + Shift + Space` | alterna floating centralizado |
+| `Alt + t` | alterna tiling |
+| `Alt + f` | alterna fullscreen |
+| `Alt + m` | minimiza |
+| `Alt + Shift + q` | fecha janela |
+
+#### Comandos do GlazeWM
+
+| Atalho | Acao |
+| --- | --- |
+| `Alt + Shift + r` | recarrega configuracao |
+| `Alt + Shift + w` | redesenha janelas |
+| `Alt + Shift + p` | pausa ou retoma o window manager |
+| `Alt + Shift + e` | encerra o GlazeWM |
+
+#### Apps rapidos
+
+| Atalho | Acao |
+| --- | --- |
+| `Alt + Enter` | abre Windows Terminal |
+| `Alt + b` | abre Brave |
+| `Alt + c` | abre VS Code |
+| `Alt + e` | abre Explorer |
+
+#### Workspaces
+
+| Atalho | Acao |
+| --- | --- |
+| `Alt + 1..9` | muda para o workspace |
+| `Alt + Shift + 1..9` | move a janela para o workspace e foca nele |
+| `Alt + s` | vai para o proximo workspace ativo |
+| `Alt + a` | vai para o workspace ativo anterior |
+| `Alt + d` | volta ao workspace recente |
+| `Alt + Shift + a` | move o workspace para a esquerda |
+| `Alt + Shift + d` | move o workspace para a direita |
+
+Workspaces padrao:
+
+| Numero | Nome | Uso |
+| --- | --- | --- |
+| `1` | `DEV` | VS Code e Cursor |
+| `2` | `WEB` | navegadores |
+| `3` | `TERM` | terminais |
+| `4` | `DB` | DBeaver e MongoDB Compass |
+| `5` | `CHAT` | Discord e Teams |
+| `6` | `MEDIA` | Stremio e VLC |
+| `7` | `GAME` | Steam |
+| `8` | `MISC` | geral |
+| `9` | `FLOAT` | janelas soltas |
 
 ## 1. Instalar o WSL
 
@@ -107,31 +293,31 @@ winget install -e --id MongoDB.Compass.Full
 
 ## 3. Rodar o script de setup
 
-Neste repositorio, o script se chama `instal.sh`.
+Neste repositorio, o script se chama `install.sh`.
 
 Se quiser rodar direto do GitHub:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jvvls/wsl-build/main/instal.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jvvls/wsl-build/main/install.sh | bash
 ```
 
 Com upgrade de pacotes:
 
 ```bash
-RUN_APT_UPGRADE=true curl -fsSL https://raw.githubusercontent.com/jvvls/wsl-build/main/instal.sh | bash
+RUN_APT_UPGRADE=true curl -fsSL https://raw.githubusercontent.com/jvvls/wsl-build/main/install.sh | bash
 ```
 
 Se estiver rodando localmente dentro do Ubuntu:
 
 ```bash
-chmod +x instal.sh
-./instal.sh
+chmod +x install.sh
+./install.sh
 ```
 
 Se quiser atualizar os pacotes do Ubuntu durante a instalacao:
 
 ```bash
-RUN_APT_UPGRADE=true ./instal.sh
+RUN_APT_UPGRADE=true ./install.sh
 ```
 
 Variaveis uteis:
