@@ -4,13 +4,14 @@
 
 param(
     [string]$WslDistro = "Ubuntu",
-    [string]$WslSetupUrl = "https://raw.githubusercontent.com/jvvls/wsl-build/main/instal.sh",
+    [string]$WslSetupUrl = "https://raw.githubusercontent.com/jvvls/wsl-build/main/install.sh",
     [string]$DotfilesRepo = "",
     [bool]$UseWin11Debloat = $true,
-    [bool]$InstallNvidiaTools = $true,
+    [object]$InstallNvidiaTools = $null,
     [bool]$InstallGamingApps = $true,
     [bool]$InstallDevGuiApps = $true,
     [bool]$InstallWindowManager = $true,
+    [bool]$InstallSpark = $false,
     [bool]$ConfigureWsl = $true,
     [bool]$RemoveOneDrive = $false,
     [bool]$AutoReboot = $false,
@@ -52,6 +53,54 @@ function Write-Warn {
 function Write-Fail {
     param([string]$Message)
     Write-Host "[FAIL] $Message" -ForegroundColor Red
+}
+
+function Test-NvidiaGpu {
+    try {
+        $gpus = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue
+        foreach ($gpu in $gpus) {
+            if ($gpu.Name -match "NVIDIA") {
+                Write-Ok "GPU NVIDIA detectada: $($gpu.Name)"
+                return $true
+            }
+        }
+    } catch {
+        Write-Warn "Não consegui detectar a GPU automaticamente: $($_.Exception.Message)"
+    }
+
+    Write-Warn "Nenhuma GPU NVIDIA detectada."
+    return $false
+}
+
+function Resolve-OptionalInstallChoices {
+    if ($null -eq $InstallNvidiaTools) {
+        Write-Section "Ferramentas NVIDIA"
+        $script:InstallNvidiaTools = Test-NvidiaGpu
+    } elseif ($InstallNvidiaTools -is [bool]) {
+        $script:InstallNvidiaTools = [bool]$InstallNvidiaTools
+    } else {
+        switch -Regex ($InstallNvidiaTools.ToString().Trim().ToLowerInvariant()) {
+            "^(true|1|s|sim|y|yes)$" {
+                $script:InstallNvidiaTools = $true
+                break
+            }
+            "^(false|0|n|nao|não|no)$" {
+                $script:InstallNvidiaTools = $false
+                break
+            }
+            default {
+                Write-Fail "Valor inválido para -InstallNvidiaTools: $InstallNvidiaTools. Use `$true ou `$false."
+                Stop-Transcript | Out-Null
+                exit 1
+            }
+        }
+    }
+
+    if ($InstallNvidiaTools) {
+        Write-Ok "Ferramentas NVIDIA serão instaladas."
+    } else {
+        Write-Warn "Ferramentas NVIDIA serão puladas."
+    }
 }
 
 function Test-IsAdmin {
@@ -99,6 +148,8 @@ function Register-ResumeAfterReboot {
 
     if ($WslSetupUrl) { $args += "-WslSetupUrl `"$WslSetupUrl`"" }
     if ($DotfilesRepo) { $args += "-DotfilesRepo `"$DotfilesRepo`"" }
+    $args += "-InstallNvidiaTools `$$InstallNvidiaTools"
+    if ($InstallSpark) { $args += "-InstallSpark `$true" }
     if ($AutoReboot) { $args += "-AutoReboot `$true" }
 
     $cmd = "powershell.exe " + ($args -join " ")
@@ -879,7 +930,12 @@ function Configure-WslDistro {
 
     if ($WslSetupUrl) {
         Invoke-Safely "Rodar setup WSL remoto" {
-            wsl -d $WslDistro -u $safeUser -- bash -lc "curl -fsSL '$WslSetupUrl' | bash"
+            $sparkEnv = ""
+            if ($InstallSpark) {
+                $sparkEnv = "INSTALL_SPARK=true "
+            }
+
+            wsl -d $WslDistro -u $safeUser -- bash -lc "curl -fsSL '$WslSetupUrl' | ${sparkEnv}bash"
         }
     } else {
         Write-Warn "WslSetupUrl vazio. Pulando seu setup WSL."
@@ -907,7 +963,11 @@ function Final-Cleanup {
     Write-Warn "Coisas que talvez precisem de ação manual:"
     Write-Host "1. Login no GitHub: gh auth login"
     Write-Host "2. Steam/Discord/Stremio: login manual"
-    Write-Host "3. NVIDIA: use GeForce Experience/NVCleanstall para baixar o driver mais novo da sua GPU."
+    if ($InstallNvidiaTools) {
+        Write-Host "3. NVIDIA: use GeForce Experience/NVCleanstall para baixar o driver mais novo da sua GPU."
+    } else {
+        Write-Host "3. NVIDIA: ferramentas puladas; rode novamente com -InstallNvidiaTools `$true se quiser instalar."
+    }
     Write-Host "4. Docker Desktop pode pedir logout/reboot para habilitar integração WSL."
     Write-Host "5. Se o WSL pediu reboot, rode o script de novo ou deixe o RunOnce continuar."
 }
@@ -919,6 +979,7 @@ if (-not (Ensure-Winget)) {
     exit 1
 }
 
+Resolve-OptionalInstallChoices
 Install-Packages
 Apply-ManualSafeDebloat
 Apply-Win11DebloatSafeFlags

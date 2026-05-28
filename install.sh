@@ -11,10 +11,10 @@ set -euo pipefail
 #   curl -fsSL https://raw.githubusercontent.com/SEU_USUARIO/SEU_REPO/main/instal.sh | bash
 #
 # Optional:
-#   RUN_APT_UPGRADE=true curl -fsSL ... | bash
-#   CONFIGURE_WSL=false curl -fsSL ... | bash
-#   FORCE_GO_INSTALL=true curl -fsSL ... | bash
-#   INSTALL_SPARK=true curl -fsSL ... | bash
+#   curl -fsSL ... | RUN_APT_UPGRADE=true bash
+#   curl -fsSL ... | CONFIGURE_WSL=false bash
+#   curl -fsSL ... | FORCE_GO_INSTALL=true bash
+#   curl -fsSL ... | INSTALL_SPARK=true bash
 #
 # Philosophy:
 #   - WSL: código, runtimes, Docker, bancos, terminal.

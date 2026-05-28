@@ -38,7 +38,7 @@ O script `install.sh` prepara:
 - TypeScript, ts-node, tsx, ESLint, Prettier, Vite, live-server, htmlhint e stylelint
 - SDKMAN
 - Java 11, 17 e 21
-- Apache Spark para ETL, como instalacao opcional
+- Apache Spark 3.5.1 opcional para ETLs
 - Python 3, pip, venv, pipx e Poetry
 - Go
 - infraestrutura local de bancos via Docker Compose
@@ -72,6 +72,8 @@ Opcionalmente:
 - VLC
 - ferramentas NVIDIA
 - outros apps normais do sistema
+
+As ferramentas NVIDIA sao instaladas automaticamente apenas quando uma GPU NVIDIA e detectada, ou definidas por parametro explicito.
 
 ## Estrutura recomendada
 
@@ -136,10 +138,12 @@ Parametros principais:
 - `-WslSetupUrl <url>`: URL do script Linux que sera executado dentro do WSL
 - `-DotfilesRepo <url>`: clona dotfiles no Windows e no WSL
 - `-UseWin11Debloat $false`: pula o Win11Debloat externo
-- `-InstallNvidiaTools $false`: pula ferramentas NVIDIA
+- `-InstallNvidiaTools $true`: instala ferramentas NVIDIA mesmo sem deteccao automatica
+- `-InstallNvidiaTools $false`: pula ferramentas NVIDIA mesmo com GPU NVIDIA detectada
 - `-InstallGamingApps $false`: pula Steam, Discord, Stremio, VLC e runtimes de jogos
 - `-InstallDevGuiApps $false`: pula apps graficos de desenvolvimento
 - `-InstallWindowManager $false`: pula GlazeWM
+- `-InstallSpark $true`: instala Apache Spark no WSL para ETLs
 - `-ConfigureWsl $false`: nao habilita nem configura WSL
 - `-RemoveOneDrive $true`: remove OneDrive
 - `-AutoReboot $true`: reinicia automaticamente quando o Windows pedir
@@ -305,7 +309,7 @@ curl -fsSL https://raw.githubusercontent.com/jvvls/wsl-build/main/install.sh | b
 Com upgrade de pacotes:
 
 ```bash
-RUN_APT_UPGRADE=true curl -fsSL https://raw.githubusercontent.com/jvvls/wsl-build/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jvvls/wsl-build/main/install.sh | RUN_APT_UPGRADE=true bash
 ```
 
 Se estiver rodando localmente dentro do Ubuntu:
@@ -326,12 +330,8 @@ Variaveis uteis:
 - `RUN_APT_UPGRADE=true`: roda `apt upgrade`
 - `CONFIGURE_WSL=false`: nao mexe no `/etc/wsl.conf`
 - `FORCE_GO_INSTALL=true`: forca reinstalacao do Go
-- `INSTALL_SPARK=ask`: pergunta durante a execucao se o Spark deve ser instalado
-- `INSTALL_SPARK=true`: instala o Spark sem perguntar
-- `INSTALL_SPARK=false`: pula a instalacao do Spark sem perguntar
-
-Ao rodar o script em terminal interativo, ele pergunta se voce quer instalar o Spark para ETL.
-Em execucoes nao interativas, como automacao ou quando nao houver terminal disponivel, use `INSTALL_SPARK=true` ou `INSTALL_SPARK=false`.
+- `INSTALL_SPARK=true`: instala Apache Spark em `~/apps/spark`
+- `SPARK_VERSION=3.5.1`: define a versao do Spark opcional
 
 ## 4. Depois da instalacao
 
@@ -346,6 +346,39 @@ Abra o Ubuntu novamente e rode:
 ```bash
 zsh
 dev-doctor
+```
+
+## Teste limpo em uma distro nova
+
+Antes de apagar a distro atual, salve chaves SSH, `.env`, bancos locais e projetos que existam apenas dentro do WSL.
+
+Backup completo opcional no PowerShell:
+
+```powershell
+wsl --export Ubuntu "$env:USERPROFILE\Desktop\ubuntu-backup.tar"
+```
+
+Reinstalacao limpa:
+
+```powershell
+wsl --shutdown
+wsl --list --verbose
+wsl --unregister Ubuntu
+wsl --install -d Ubuntu
+```
+
+Depois abra o Ubuntu novo e rode:
+
+```bash
+sudo apt update
+sudo apt install -y curl git ca-certificates
+curl -fsSL https://raw.githubusercontent.com/jvvls/wsl-build/main/install.sh | bash
+```
+
+Com Spark para validar o fluxo DataViva:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jvvls/wsl-build/main/install.sh | INSTALL_SPARK=true bash
 ```
 
 ## Configuracao automatica do WSL
@@ -604,35 +637,48 @@ sdk use java <versao>
 sdk default java <versao>
 ```
 
-## Spark opcional para ETL
+## Spark para ETLs DataViva
 
-Se voce responder `s` quando o script perguntar sobre o Spark, ele vai:
+O Spark fica fora do setup base por ser uma dependencia pesada e especifica de ETL.
 
-- baixar o Apache Spark `3.5.1`
-- extrair em `~/apps/spark`
-- reaproveitar o Java 11 instalado pelo SDKMAN
-- adicionar `SPARK_HOME`, `SPARK_JAVA_HOME` e `PATH` no `.bashrc` e no `.zshrc`
-- gravar um `spark-env.sh` para o Spark sempre subir com o Java 11 do SDKMAN
-
-Com isso, o Spark roda com Java 11 sem sobrescrever o `JAVA_HOME` global da sua sessao.
-
-Validacao rapida depois de reabrir o terminal:
+Para instalar junto com o setup do WSL:
 
 ```bash
-spark-submit --version
+curl -fsSL https://raw.githubusercontent.com/jvvls/wsl-build/main/install.sh | INSTALL_SPARK=true bash
 ```
 
-Execucao sem prompt:
+Para instalar pelo script automatico do Windows, baixe o script e rode com:
+
+```powershell
+New-Item -ItemType Directory -Force -Path $env:USERPROFILE\dev-setup
+iwr https://raw.githubusercontent.com/jvvls/wsl-build/main/windows/setp-windows.ps1 -OutFile $env:USERPROFILE\dev-setup\setp-windows.ps1
+powershell -ExecutionPolicy Bypass -File $env:USERPROFILE\dev-setup\setp-windows.ps1 -InstallSpark $true
+```
+
+O instalador baixa o pacote do archive oficial da Apache:
+
+```text
+https://archive.apache.org/dist/spark/spark-3.5.1/
+```
+
+Variaveis configuradas:
 
 ```bash
-INSTALL_SPARK=true ./instal.sh
+SPARK_HOME=~/apps/spark
+JAVA_HOME=<Java 11 instalado pelo SDKMAN>
+PYSPARK_PYTHON=python3
 ```
 
-Ou direto do GitHub:
+Testes:
 
 ```bash
-INSTALL_SPARK=true curl -fsSL https://raw.githubusercontent.com/jvvls/wsl-build/main/instal.sh | bash
+source ~/.zshrc
+spark-shell --version
+pyspark --version
+dev-doctor
 ```
+
+Se um ETL usar `s3a://`, pode ser necessario adicionar jars como `hadoop-aws` e AWS SDK conforme a versao do Hadoop usada pelo projeto.
 
 ## Python
 
