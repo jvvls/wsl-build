@@ -73,7 +73,7 @@ Opcionalmente:
 - ferramentas NVIDIA
 - outros apps normais do sistema
 
-As ferramentas NVIDIA sao instaladas automaticamente apenas quando uma GPU NVIDIA e detectada, ou definidas por parametro explicito.
+As ferramentas NVIDIA sao instaladas automaticamente apenas quando uma GPU NVIDIA e detectada. A deteccao consulta os adaptadores de video do Windows e dispositivos PnP de classe Display com vendor NVIDIA.
 
 ## Estrutura recomendada
 
@@ -138,6 +138,7 @@ Parametros principais:
 - `-WslSetupUrl <url>`: URL do script Linux que sera executado dentro do WSL
 - `-DotfilesRepo <url>`: clona dotfiles no Windows e no WSL
 - `-UseWin11Debloat $false`: pula o Win11Debloat externo
+- `-InstallNvidiaTools auto`: detecta GPU NVIDIA e instala as ferramentas automaticamente quando encontrar
 - `-InstallNvidiaTools $true`: instala ferramentas NVIDIA mesmo sem deteccao automatica
 - `-InstallNvidiaTools $false`: pula ferramentas NVIDIA mesmo com GPU NVIDIA detectada
 - `-InstallGamingApps $false`: pula Steam, Discord, Stremio, VLC e runtimes de jogos
@@ -655,7 +656,13 @@ iwr https://raw.githubusercontent.com/jvvls/wsl-build/main/windows/setp-windows.
 powershell -ExecutionPolicy Bypass -File $env:USERPROFILE\dev-setup\setp-windows.ps1 -InstallSpark $true
 ```
 
-O instalador baixa o pacote do archive oficial da Apache:
+O instalador tenta baixar primeiro pelo mesmo caminho do tutorial:
+
+```text
+https://dlcdn.apache.org/spark/spark-3.5.1/
+```
+
+Se essa URL nao estiver mais servindo a versao 3.5.1, ele usa o archive oficial da Apache como fallback:
 
 ```text
 https://archive.apache.org/dist/spark/spark-3.5.1/
@@ -665,7 +672,7 @@ Variaveis configuradas:
 
 ```bash
 SPARK_HOME=~/apps/spark
-JAVA_HOME=<Java 11 instalado pelo SDKMAN>
+JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
 PYSPARK_PYTHON=python3
 ```
 

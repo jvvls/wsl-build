@@ -8,7 +8,7 @@ set -euo pipefail
 # ============================================================
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/SEU_USUARIO/SEU_REPO/main/instal.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/SEU_USUARIO/SEU_REPO/main/install.sh | bash
 #
 # Optional:
 #   curl -fsSL ... | RUN_APT_UPGRADE=true bash
@@ -89,6 +89,39 @@ append_shell_block() {
       printf "%s\n" "$content"
       echo "# <<< $marker"
     } >> "$file"
+  fi
+}
+
+upsert_shell_block() {
+  local file="$1"
+  local marker="$2"
+  local content="$3"
+  local temp_file
+
+  touch "$file"
+
+  if grep -qF "# >>> $marker" "$file"; then
+    temp_file="$(mktemp)"
+    awk -v marker="$marker" -v content="$content" '
+      $0 == "# >>> " marker {
+        print
+        print content
+        in_block = 1
+        next
+      }
+      $0 == "# <<< " marker {
+        in_block = 0
+        print
+        next
+      }
+      !in_block {
+        print
+      }
+    ' "$file" > "$temp_file"
+    cat "$temp_file" > "$file"
+    rm -f "$temp_file"
+  else
+    append_shell_block "$file" "$marker" "$content"
   fi
 }
 
@@ -186,6 +219,8 @@ is_wsl() {
 }
 
 configure_wsl() {
+  local wsl_default_user=""
+
   if [ "$CONFIGURE_WSL" != "true" ]; then
     warn "Pulando configuração do /etc/wsl.conf porque CONFIGURE_WSL=false."
     return
@@ -200,9 +235,24 @@ configure_wsl() {
 
   if [ -f /etc/wsl.conf ]; then
     sudo cp /etc/wsl.conf "/etc/wsl.conf.bak.$(date +%Y%m%d%H%M%S)"
+    wsl_default_user="$(
+      awk '
+        /^\[/ {
+          in_user = ($0 == "[user]")
+          next
+        }
+        in_user && /^[[:space:]]*default[[:space:]]*=/ {
+          sub(/^[^=]*=[[:space:]]*/, "")
+          gsub(/[[:space:]]+$/, "")
+          print
+          exit
+        }
+      ' /etc/wsl.conf
+    )"
   fi
 
-  sudo tee /etc/wsl.conf >/dev/null <<'EOF'
+  {
+    cat <<'EOF'
 [boot]
 systemd=true
 
@@ -210,6 +260,11 @@ systemd=true
 enabled=true
 appendWindowsPath=false
 EOF
+
+    if [ -n "$wsl_default_user" ]; then
+      printf "\n[user]\ndefault=%s\n" "$wsl_default_user"
+    fi
+  } | sudo tee /etc/wsl.conf >/dev/null
 
   warn "O systemd e o isolamento do PATH só entram 100% em vigor depois de rodar 'wsl --shutdown' no Windows."
 }
@@ -469,15 +524,21 @@ install_optional_spark() {
   local spark_archive="spark-${spark_version}-bin-${spark_hadoop_profile}.tgz"
   local spark_dirname="spark-${spark_version}-bin-${spark_hadoop_profile}"
   local spark_url="${SPARK_URL:-https://dlcdn.apache.org/spark/spark-${spark_version}/${spark_archive}}"
+  local spark_fallback_url="https://archive.apache.org/dist/spark/spark-${spark_version}/${spark_archive}"
   local spark_apps_dir="${SPARK_APPS_DIR:-$HOME/apps}"
   local spark_install_dir="$spark_apps_dir/spark"
-  local spark_java_home
+  local spark_java_home="/usr/lib/jvm/java-11-openjdk-amd64"
   local spark_block
   local temp_dir
 
   log "Instalando Apache Spark ${spark_version} para ETL..."
 
-  spark_java_home="$(resolve_sdkman_java_home 11)" || error "Nao consegui localizar o Java 11 instalado pelo SDKMAN para configurar o Spark."
+  sudo apt-get update
+  sudo apt-get install -y openjdk-11-jdk
+
+  if [ ! -d "$spark_java_home" ]; then
+    error "Nao encontrei o Java 11 em $spark_java_home depois de instalar openjdk-11-jdk."
+  fi
 
   mkdir -p "$spark_apps_dir"
 
@@ -486,7 +547,11 @@ install_optional_spark() {
   else
     temp_dir="$(mktemp -d)"
 
-    wget -O "$temp_dir/$spark_archive" "$spark_url"
+    if ! wget -O "$temp_dir/$spark_archive" "$spark_url"; then
+      warn "Nao consegui baixar em $spark_url. Tentando archive oficial da Apache..."
+      wget -O "$temp_dir/$spark_archive" "$spark_fallback_url"
+    fi
+
     tar -xzf "$temp_dir/$spark_archive" -C "$temp_dir"
     mv "$temp_dir/$spark_dirname" "$spark_install_dir"
     rm -rf "$temp_dir"
@@ -499,13 +564,14 @@ export JAVA_HOME="$spark_java_home"
 EOF
 
   spark_block="export SPARK_HOME=\"$spark_install_dir\"
-export SPARK_JAVA_HOME=\"$spark_java_home\"
-export PATH=\"\$PATH:\$SPARK_HOME/bin\""
+export JAVA_HOME=\"$spark_java_home\"
+export PATH=\"\$PATH:\$SPARK_HOME/bin\"
+export PYSPARK_PYTHON=python3"
 
-  append_shell_block "$HOME/.zshrc" "WSL DEV ENV - SPARK" "$spark_block"
-  append_shell_block "$HOME/.bashrc" "WSL DEV ENV - SPARK" "$spark_block"
+  upsert_shell_block "$HOME/.zshrc" "WSL DEV ENV - SPARK" "$spark_block"
+  upsert_shell_block "$HOME/.bashrc" "WSL DEV ENV - SPARK" "$spark_block"
 
-  warn "O Spark vai usar o Java 11 do SDKMAN em $spark_java_home sem sobrescrever o JAVA_HOME global da sua sessao."
+  warn "O Spark vai usar o OpenJDK 11 em $spark_java_home, alinhado ao tutorial do trabalho."
   warn "Abra uma nova sessao e valide o Spark com: spark-submit --version"
 }
 
@@ -821,8 +887,7 @@ echo
 echo "[Spark]"
 if command -v spark-submit >/dev/null 2>&1; then
   echo "SPARK_HOME=${SPARK_HOME:-nao definido}"
-  echo "SPARK_JAVA_HOME=${SPARK_JAVA_HOME:-nao definido}"
-  echo "JAVA_HOME atual da sessao=${JAVA_HOME:-nao definido}"
+  echo "JAVA_HOME=${JAVA_HOME:-nao definido}"
   spark-submit --version 2>&1 | sed -n '1,5p'
 else
   echo "Spark nao configurado nesta sessao."

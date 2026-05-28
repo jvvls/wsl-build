@@ -56,16 +56,41 @@ function Write-Fail {
 }
 
 function Test-NvidiaGpu {
+    $detectedGpus = @()
+
     try {
         $gpus = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue
         foreach ($gpu in $gpus) {
-            if ($gpu.Name -match "NVIDIA") {
-                Write-Ok "GPU NVIDIA detectada: $($gpu.Name)"
-                return $true
+            if ($gpu.Name -match "NVIDIA" -or $gpu.PNPDeviceID -match "VEN_10DE") {
+                $detectedGpus += $gpu.Name
             }
         }
     } catch {
-        Write-Warn "Não consegui detectar a GPU automaticamente: $($_.Exception.Message)"
+        Write-Warn "Não consegui consultar Win32_VideoController: $($_.Exception.Message)"
+    }
+
+    try {
+        $displayDevices = Get-CimInstance Win32_PnPEntity -ErrorAction SilentlyContinue |
+            Where-Object {
+                ($_.PNPClass -eq "Display" -or $_.Class -eq "Display") -and
+                ($_.Name -match "NVIDIA" -or $_.DeviceID -match "VEN_10DE")
+            }
+
+        foreach ($device in $displayDevices) {
+            $detectedGpus += $device.Name
+        }
+    } catch {
+        Write-Warn "Não consegui consultar dispositivos PnP de vídeo: $($_.Exception.Message)"
+    }
+
+    $detectedGpus = @($detectedGpus | Where-Object { $_ } | Select-Object -Unique)
+
+    if ($detectedGpus.Count -gt 0) {
+        foreach ($gpuName in $detectedGpus) {
+            Write-Ok "GPU NVIDIA detectada: $gpuName"
+        }
+
+        return $true
     }
 
     Write-Warn "Nenhuma GPU NVIDIA detectada."
@@ -88,8 +113,13 @@ function Resolve-OptionalInstallChoices {
                 $script:InstallNvidiaTools = $false
                 break
             }
+            "^(auto|detect|detectar)$" {
+                Write-Section "Ferramentas NVIDIA"
+                $script:InstallNvidiaTools = Test-NvidiaGpu
+                break
+            }
             default {
-                Write-Fail "Valor inválido para -InstallNvidiaTools: $InstallNvidiaTools. Use `$true ou `$false."
+                Write-Fail "Valor inválido para -InstallNvidiaTools: $InstallNvidiaTools. Use `$true, `$false ou auto."
                 Stop-Transcript | Out-Null
                 exit 1
             }
@@ -207,10 +237,28 @@ function Invoke-Safely {
 
     try {
         Write-Host "-> $Name" -ForegroundColor Gray
+        $previousErrorActionPreference = $ErrorActionPreference
+        $ErrorActionPreference = "Stop"
+        $previousExitCode = $global:LASTEXITCODE
+        $global:LASTEXITCODE = 0
         & $Block
+        if ($null -ne $global:LASTEXITCODE -and $global:LASTEXITCODE -ne 0) {
+            throw "Comando nativo terminou com exit code $global:LASTEXITCODE"
+        }
         Write-Ok $Name
     } catch {
         Write-Warn "$Name falhou: $($_.Exception.Message)"
+    } finally {
+        $global:LASTEXITCODE = $previousExitCode
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+}
+
+function Assert-NativeSuccess {
+    param([string]$Step)
+
+    if ($null -ne $global:LASTEXITCODE -and $global:LASTEXITCODE -ne 0) {
+        throw "$Step terminou com exit code $global:LASTEXITCODE"
     }
 }
 
@@ -916,10 +964,15 @@ function Configure-WslDistro {
 
     Invoke-Safely "Preparar usuário Linux $safeUser" {
         wsl -d $WslDistro -u root -- bash -lc "apt-get update && apt-get install -y sudo curl ca-certificates git"
+        Assert-NativeSuccess "Instalar pacotes base na distro WSL"
         wsl -d $WslDistro -u root -- bash -lc "id -u $safeUser >/dev/null 2>&1 || useradd -m -s /bin/bash -G sudo $safeUser"
-        wsl -d $WslDistro -u root -- bash -lc "echo '$safeUser ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/$safeUser && chmod 440 /etc/sudoers.d/$safeUser"
+        Assert-NativeSuccess "Criar usuário Linux $safeUser"
+        wsl -d $WslDistro -u root -- bash -lc "echo '$safeUser ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/$safeUser-bootstrap && chmod 440 /etc/sudoers.d/$safeUser-bootstrap"
+        Assert-NativeSuccess "Criar sudo temporário para bootstrap de $safeUser"
         wsl -d $WslDistro -u root -- bash -lc "printf '[user]\ndefault=$safeUser\n' > /etc/wsl.conf"
+        Assert-NativeSuccess "Configurar usuário padrão do WSL"
         wsl --terminate $WslDistro
+        Assert-NativeSuccess "Reiniciar distro WSL"
     }
 
     if ($DotfilesRepo) {
@@ -935,9 +988,19 @@ function Configure-WslDistro {
                 $sparkEnv = "INSTALL_SPARK=true "
             }
 
-            wsl -d $WslDistro -u $safeUser -- bash -lc "curl -fsSL '$WslSetupUrl' | ${sparkEnv}bash"
+            try {
+                wsl -d $WslDistro -u $safeUser -- bash -lc "curl -fsSL '$WslSetupUrl' | ${sparkEnv}bash"
+                Assert-NativeSuccess "Rodar setup Linux no WSL"
+            } finally {
+                wsl -d $WslDistro -u root -- bash -lc "rm -f /etc/sudoers.d/$safeUser-bootstrap"
+                Assert-NativeSuccess "Remover sudo temporário de $safeUser"
+            }
         }
     } else {
+        Invoke-Safely "Remover sudo temporário de $safeUser" {
+            wsl -d $WslDistro -u root -- bash -lc "rm -f /etc/sudoers.d/$safeUser-bootstrap"
+            Assert-NativeSuccess "Remover sudo temporário de $safeUser"
+        }
         Write-Warn "WslSetupUrl vazio. Pulando seu setup WSL."
         Write-Host "Depois rode algo tipo:"
         Write-Host "wsl -d $WslDistro -- bash -lc `"curl -fsSL https://raw.githubusercontent.com/SEU_USER/SEU_REPO/main/wsl/setup-wsl.sh | bash`""
