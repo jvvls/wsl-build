@@ -561,11 +561,15 @@ install_optional_spark() {
 
   cat > "$spark_install_dir/conf/spark-env.sh" <<EOF
 export JAVA_HOME="$spark_java_home"
+export SPARK_LOCAL_IP=127.0.0.1
+export SPARK_LOCAL_HOSTNAME=localhost
 EOF
 
   spark_block="export SPARK_HOME=\"$spark_install_dir\"
 export JAVA_HOME=\"$spark_java_home\"
 export PATH=\"\$PATH:\$SPARK_HOME/bin\"
+export SPARK_LOCAL_IP=127.0.0.1
+export SPARK_LOCAL_HOSTNAME=localhost
 export PYSPARK_PYTHON=python3"
 
   upsert_shell_block "$HOME/.zshrc" "WSL DEV ENV - SPARK" "$spark_block"

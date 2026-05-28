@@ -16,6 +16,34 @@ Repositorio:
 https://github.com/jvvls/wsl-build
 ```
 
+Teste automatizado local:
+
+```bash
+./tests/smoke.sh
+```
+
+Esse teste valida sintaxe e pontos criticos do setup sem instalar pacotes nem alterar o sistema.
+
+Validacao depois de rodar o setup do Windows, em PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tests\validate-windows.ps1
+```
+
+Validacao depois de rodar o setup do WSL, dentro do Ubuntu:
+
+```bash
+./tests/validate-wsl.sh
+```
+
+Esse teste tambem confere se o `HOME`, `~/dev`, `~/dev/_infra`, `~/apps/spark` e os binarios principais estao no filesystem Linux, sem cair em `/mnt/c`.
+
+Para tambem subir os bancos locais e validar o Docker Compose da infra:
+
+```bash
+WITH_DBS=true ./tests/validate-wsl.sh
+```
+
 ## Objetivo
 
 A ideia deste ambiente e separar bem os papeis:
@@ -673,6 +701,8 @@ Variaveis configuradas:
 ```bash
 SPARK_HOME=~/apps/spark
 JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+SPARK_LOCAL_IP=127.0.0.1
+SPARK_LOCAL_HOSTNAME=localhost
 PYSPARK_PYTHON=python3
 ```
 
