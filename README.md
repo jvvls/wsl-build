@@ -36,7 +36,7 @@ Validacao depois de rodar o setup do WSL, dentro do Ubuntu:
 ./tests/validate-wsl.sh
 ```
 
-Esse teste tambem confere se o `HOME`, `~/dev`, `~/dev/_infra`, `~/apps/spark` e os binarios principais estao no filesystem Linux, sem cair em `/mnt/c`.
+Esse teste tambem confere se o `HOME`, `~/dev`, `~/dev/_infra` e os binarios principais estao no filesystem Linux, sem cair em `/mnt/c`.
 
 Para tambem subir os bancos locais e validar o Docker Compose da infra:
 
@@ -66,7 +66,6 @@ O script `install.sh` prepara:
 - TypeScript, ts-node, tsx, ESLint, Prettier, Vite, live-server, htmlhint e stylelint
 - SDKMAN
 - Java 11, 17 e 21
-- Apache Spark 3.5.1 opcional para ETLs
 - Python 3, pip, venv, pipx e Poetry
 - Go
 - infraestrutura local de bancos via Docker Compose
@@ -133,6 +132,8 @@ Rode em um PowerShell aberto como Administrador:
 irm https://raw.githubusercontent.com/jvvls/wsl-build/main/windows/setp-windows.ps1 | iex
 ```
 
+Sem informar `-ConfigureWsl`, o script pergunta se voce quer habilitar e configurar o WSL naquele momento.
+
 O script faz, em ordem geral:
 
 - cria ponto de restauracao antes das mudancas
@@ -143,10 +144,11 @@ O script faz, em ordem geral:
 - cria arquivos de configuracao em `%USERPROFILE%\dev-setup\windows`
 - instala e inicia os keybinds do AutoHotkey
 - configura GlazeWM como window manager
-- habilita recursos do WSL2
-- instala a distro Ubuntu, se ainda nao existir
-- cria o usuario Linux baseado no usuario do Windows
-- roda o setup do WSL com `install.sh`
+- pergunta se voce quer configurar o WSL
+- se confirmar, habilita recursos do WSL2
+- se confirmar, instala a distro Ubuntu, se ainda nao existir
+- se confirmar, cria o usuario Linux baseado no usuario do Windows
+- se confirmar, roda o setup do WSL com `install.sh`
 - registra continuacao automatica apos reboot quando necessario
 - salva logs em `%USERPROFILE%\dev-setup-logs`
 
@@ -172,7 +174,7 @@ Parametros principais:
 - `-InstallGamingApps $false`: pula Steam, Discord, Stremio, VLC e runtimes de jogos
 - `-InstallDevGuiApps $false`: pula apps graficos de desenvolvimento
 - `-InstallWindowManager $false`: pula GlazeWM
-- `-InstallSpark $true`: instala Apache Spark no WSL para ETLs
+- `-ConfigureWsl $true`: habilita e configura o WSL sem perguntar
 - `-ConfigureWsl $false`: nao habilita nem configura WSL
 - `-RemoveOneDrive $true`: remove OneDrive
 - `-AutoReboot $true`: reinicia automaticamente quando o Windows pedir
@@ -359,8 +361,6 @@ Variaveis uteis:
 - `RUN_APT_UPGRADE=true`: roda `apt upgrade`
 - `CONFIGURE_WSL=false`: nao mexe no `/etc/wsl.conf`
 - `FORCE_GO_INSTALL=true`: forca reinstalacao do Go
-- `INSTALL_SPARK=true`: instala Apache Spark em `~/apps/spark`
-- `SPARK_VERSION=3.5.1`: define a versao do Spark opcional
 
 ## 4. Depois da instalacao
 
@@ -402,12 +402,6 @@ Depois abra o Ubuntu novo e rode:
 sudo apt update
 sudo apt install -y curl git ca-certificates
 curl -fsSL https://raw.githubusercontent.com/jvvls/wsl-build/main/install.sh | bash
-```
-
-Com Spark para validar o fluxo DataViva:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/jvvls/wsl-build/main/install.sh | INSTALL_SPARK=true bash
 ```
 
 ## Configuracao automatica do WSL
@@ -665,57 +659,6 @@ Trocar de versao:
 sdk use java <versao>
 sdk default java <versao>
 ```
-
-## Spark para ETLs DataViva
-
-O Spark fica fora do setup base por ser uma dependencia pesada e especifica de ETL.
-
-Para instalar junto com o setup do WSL:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/jvvls/wsl-build/main/install.sh | INSTALL_SPARK=true bash
-```
-
-Para instalar pelo script automatico do Windows, baixe o script e rode com:
-
-```powershell
-New-Item -ItemType Directory -Force -Path $env:USERPROFILE\dev-setup
-iwr https://raw.githubusercontent.com/jvvls/wsl-build/main/windows/setp-windows.ps1 -OutFile $env:USERPROFILE\dev-setup\setp-windows.ps1
-powershell -ExecutionPolicy Bypass -File $env:USERPROFILE\dev-setup\setp-windows.ps1 -InstallSpark $true
-```
-
-O instalador tenta baixar primeiro pelo mesmo caminho do tutorial:
-
-```text
-https://dlcdn.apache.org/spark/spark-3.5.1/
-```
-
-Se essa URL nao estiver mais servindo a versao 3.5.1, ele usa o archive oficial da Apache como fallback:
-
-```text
-https://archive.apache.org/dist/spark/spark-3.5.1/
-```
-
-Variaveis configuradas:
-
-```bash
-SPARK_HOME=~/apps/spark
-JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
-SPARK_LOCAL_IP=127.0.0.1
-SPARK_LOCAL_HOSTNAME=localhost
-PYSPARK_PYTHON=python3
-```
-
-Testes:
-
-```bash
-source ~/.zshrc
-spark-shell --version
-pyspark --version
-dev-doctor
-```
-
-Se um ETL usar `s3a://`, pode ser necessario adicionar jars como `hadoop-aws` e AWS SDK conforme a versao do Hadoop usada pelo projeto.
 
 ## Python
 

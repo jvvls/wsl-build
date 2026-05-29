@@ -5,8 +5,6 @@ set -euo pipefail
 WITH_DBS="${WITH_DBS:-false}"
 DEV_DIR="${DEV_DIR:-$HOME/dev}"
 INFRA_DIR="${INFRA_DIR:-$DEV_DIR/_infra}"
-SPARK_HOME_EXPECTED="${SPARK_HOME_EXPECTED:-$HOME/apps/spark}"
-JAVA_HOME_EXPECTED="${JAVA_HOME_EXPECTED:-/usr/lib/jvm/java-11-openjdk-amd64}"
 
 passed=0
 failed=0
@@ -142,8 +140,8 @@ fi
 check_not_windows_path "HOME" "$HOME"
 check_linux_home_path "DEV_DIR" "$DEV_DIR"
 check_linux_home_path "INFRA_DIR" "$INFRA_DIR"
-check_linux_home_path "SPARK_HOME esperado" "$SPARK_HOME_EXPECTED"
 check_linux_home_path "NVM_DIR esperado" "$HOME/.nvm"
+check_linux_home_path "SDKMAN_DIR esperado" "$HOME/.sdkman"
 check_linux_home_path "GOPATH esperado" "$HOME/go"
 
 if [ -d "$DEV_DIR" ]; then
@@ -216,10 +214,12 @@ check_command javac "javac"
 check_command_not_windows_path java "Java"
 check_command_not_windows_path javac "javac"
 
-if [ -d "$JAVA_HOME_EXPECTED" ]; then
-  ok "OpenJDK 11 existe em $JAVA_HOME_EXPECTED"
+if [ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]; then
+  # shellcheck disable=SC1090
+  . "$HOME/.sdkman/bin/sdkman-init.sh"
+  ok "SDKMAN carregado"
 else
-  bad "OpenJDK 11 nao encontrado em $JAVA_HOME_EXPECTED"
+  bad "SDKMAN nao encontrado em ~/.sdkman/bin/sdkman-init.sh"
 fi
 
 if java -version >/tmp/dev-setup-java.out 2>&1; then
@@ -229,69 +229,17 @@ else
   sed 's/^/  /' /tmp/dev-setup-java.out >&2
 fi
 
-if "$JAVA_HOME_EXPECTED/bin/java" -version >/tmp/dev-setup-java-home.out 2>&1; then
-  if grep -q 'version "11\.' /tmp/dev-setup-java-home.out; then
-    ok "JAVA_HOME aponta para Java 11"
-  else
-    bad "JAVA_HOME esperado nao parece Java 11"
-    sed 's/^/  /' /tmp/dev-setup-java-home.out >&2
-  fi
+if sdk current java >/tmp/dev-setup-sdk-java.out 2>&1; then
+  ok "sdk current java responde"
 else
-  bad "JAVA_HOME/bin/java nao respondeu"
-  sed 's/^/  /' /tmp/dev-setup-java-home.out >&2
+  bad "sdk current java nao respondeu"
+  sed 's/^/  /' /tmp/dev-setup-sdk-java.out >&2
 fi
 
-printf '\n== Spark ==\n'
-export SPARK_HOME="${SPARK_HOME:-$SPARK_HOME_EXPECTED}"
-active_java_home="${JAVA_HOME:-}"
-export JAVA_HOME="$JAVA_HOME_EXPECTED"
-export PATH="$PATH:$SPARK_HOME/bin"
-export SPARK_LOCAL_IP="${SPARK_LOCAL_IP:-127.0.0.1}"
-export SPARK_LOCAL_HOSTNAME="${SPARK_LOCAL_HOSTNAME:-localhost}"
-export PYSPARK_PYTHON="${PYSPARK_PYTHON:-python3}"
-
-if [ -d "$SPARK_HOME" ]; then
-  ok "SPARK_HOME existe: $SPARK_HOME"
+if [ -n "${JAVA_HOME:-}" ]; then
+  check_not_windows_path "JAVA_HOME" "$JAVA_HOME"
 else
-  bad "SPARK_HOME nao encontrado: $SPARK_HOME"
-fi
-
-check_linux_home_path "SPARK_HOME" "$SPARK_HOME"
-
-if [ -z "$active_java_home" ] || [ "$active_java_home" = "$JAVA_HOME_EXPECTED" ]; then
-  ok "JAVA_HOME da sessao compativel com o tutorial: ${active_java_home:-nao definido}"
-else
-  bad "JAVA_HOME da sessao esperado $JAVA_HOME_EXPECTED, atual $active_java_home"
-fi
-
-ok "Spark sera testado com JAVA_HOME=$JAVA_HOME"
-
-if [ "$SPARK_LOCAL_IP" = "127.0.0.1" ]; then
-  ok "SPARK_LOCAL_IP configurado: $SPARK_LOCAL_IP"
-else
-  bad "SPARK_LOCAL_IP esperado 127.0.0.1, atual $SPARK_LOCAL_IP"
-fi
-
-if [ "$SPARK_LOCAL_HOSTNAME" = "localhost" ]; then
-  ok "SPARK_LOCAL_HOSTNAME configurado: $SPARK_LOCAL_HOSTNAME"
-else
-  bad "SPARK_LOCAL_HOSTNAME esperado localhost, atual $SPARK_LOCAL_HOSTNAME"
-fi
-
-check_command spark-submit "spark-submit"
-check_runs "spark-submit --version responde" spark-submit --version
-check_command_not_windows_path spark-submit "spark-submit"
-
-if spark-submit --class org.apache.spark.examples.SparkPi "$SPARK_HOME/examples/jars/spark-examples_2.12-3.5.1.jar" 2 >/tmp/dev-setup-spark-pi.out 2>&1; then
-  if grep -q 'Pi is roughly' /tmp/dev-setup-spark-pi.out; then
-    ok "Spark executa job local SparkPi"
-  else
-    bad "SparkPi rodou, mas saida esperada nao apareceu"
-    sed 's/^/  /' /tmp/dev-setup-spark-pi.out >&2
-  fi
-else
-  bad "Spark nao conseguiu executar SparkPi"
-  sed 's/^/  /' /tmp/dev-setup-spark-pi.out >&2
+  warn_skip "JAVA_HOME nao definido nesta sessao"
 fi
 
 printf '\n== Python ==\n'

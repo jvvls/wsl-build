@@ -14,7 +14,6 @@ set -euo pipefail
 #   curl -fsSL ... | RUN_APT_UPGRADE=true bash
 #   curl -fsSL ... | CONFIGURE_WSL=false bash
 #   curl -fsSL ... | FORCE_GO_INSTALL=true bash
-#   curl -fsSL ... | INSTALL_SPARK=true bash
 #
 # Philosophy:
 #   - WSL: código, runtimes, Docker, bancos, terminal.
@@ -25,9 +24,6 @@ set -euo pipefail
 RUN_APT_UPGRADE="${RUN_APT_UPGRADE:-false}"
 CONFIGURE_WSL="${CONFIGURE_WSL:-true}"
 FORCE_GO_INSTALL="${FORCE_GO_INSTALL:-false}"
-INSTALL_SPARK="${INSTALL_SPARK:-ask}"
-INSTALL_SPARK_SELECTED="false"
-SDKMAN_JAVA_11_VERSION=""
 
 DEV_DIR="${DEV_DIR:-$HOME/dev}"
 INFRA_DIR="$DEV_DIR/_infra"
@@ -123,95 +119,6 @@ upsert_shell_block() {
   else
     append_shell_block "$file" "$marker" "$content"
   fi
-}
-
-prompt_yes_no() {
-  local prompt_message="$1"
-  local default_answer="${2:-n}"
-  local answer
-  local normalized
-
-  if [ ! -r /dev/tty ]; then
-    return 2
-  fi
-
-  while true; do
-    printf "%s" "$prompt_message" > /dev/tty
-    IFS= read -r answer < /dev/tty || return 2
-    answer="${answer:-$default_answer}"
-    normalized="${answer,,}"
-
-    case "$normalized" in
-      s|sim|y|yes)
-        return 0
-        ;;
-      n|nao|no)
-        return 1
-        ;;
-      *)
-        printf "Resposta invalida. Digite s ou n.\n" > /dev/tty
-        ;;
-    esac
-  done
-}
-
-ask_install_spark() {
-  if prompt_yes_no "Deseja instalar o Apache Spark para ETL? [s/N]: " "n"; then
-    INSTALL_SPARK_SELECTED="true"
-  else
-    local prompt_status="$?"
-
-    if [ "$prompt_status" -eq 2 ]; then
-      warn "Nao encontrei um terminal interativo para perguntar sobre o Spark. Use INSTALL_SPARK=true ou INSTALL_SPARK=false em execucoes nao interativas."
-    fi
-
-    INSTALL_SPARK_SELECTED="false"
-  fi
-}
-
-resolve_optional_components() {
-  case "${INSTALL_SPARK,,}" in
-    true|1|yes|y|sim|s)
-      INSTALL_SPARK_SELECTED="true"
-      ;;
-    false|0|no|n|nao)
-      INSTALL_SPARK_SELECTED="false"
-      ;;
-    ask|prompt|"")
-      ask_install_spark
-      ;;
-    *)
-      warn "Valor invalido para INSTALL_SPARK=$INSTALL_SPARK. Use true, false ou ask."
-      ask_install_spark
-      ;;
-  esac
-}
-
-resolve_sdkman_java_home() {
-  local major="$1"
-  local version=""
-
-  if [ "$major" = "11" ] && [ -n "$SDKMAN_JAVA_11_VERSION" ] && [ -d "$HOME/.sdkman/candidates/java/$SDKMAN_JAVA_11_VERSION" ]; then
-    printf "%s\n" "$HOME/.sdkman/candidates/java/$SDKMAN_JAVA_11_VERSION"
-    return 0
-  fi
-
-  if [ ! -d "$HOME/.sdkman/candidates/java" ]; then
-    return 1
-  fi
-
-  version="$(
-    find "$HOME/.sdkman/candidates/java" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | \
-      grep -E "^${major}\\." | \
-      sort -V | \
-      tail -n 1
-  )"
-
-  if [ -z "$version" ]; then
-    return 1
-  fi
-
-  printf "%s\n" "$HOME/.sdkman/candidates/java/$version"
 }
 
 is_wsl() {
@@ -492,10 +399,6 @@ install_sdkman_java() {
       sdk install java "$version"
     fi
 
-    if [ "$major" = "11" ]; then
-      SDKMAN_JAVA_11_VERSION="$version"
-    fi
-
     if [ "$major" = "21" ]; then
       sdk default java "$version"
     fi
@@ -511,72 +414,6 @@ install_sdkman_java() {
 
   append_shell_block "$HOME/.zshrc" "WSL DEV ENV - SDKMAN" "$sdkman_block"
   append_shell_block "$HOME/.bashrc" "WSL DEV ENV - SDKMAN" "$sdkman_block"
-}
-
-install_optional_spark() {
-  if [ "$INSTALL_SPARK_SELECTED" != "true" ]; then
-    log "Pulando instalacao opcional do Apache Spark."
-    return
-  fi
-
-  local spark_version="${SPARK_VERSION:-3.5.1}"
-  local spark_hadoop_profile="${SPARK_HADOOP_PROFILE:-hadoop3}"
-  local spark_archive="spark-${spark_version}-bin-${spark_hadoop_profile}.tgz"
-  local spark_dirname="spark-${spark_version}-bin-${spark_hadoop_profile}"
-  local spark_url="${SPARK_URL:-https://dlcdn.apache.org/spark/spark-${spark_version}/${spark_archive}}"
-  local spark_fallback_url="https://archive.apache.org/dist/spark/spark-${spark_version}/${spark_archive}"
-  local spark_apps_dir="${SPARK_APPS_DIR:-$HOME/apps}"
-  local spark_install_dir="$spark_apps_dir/spark"
-  local spark_java_home="/usr/lib/jvm/java-11-openjdk-amd64"
-  local spark_block
-  local temp_dir
-
-  log "Instalando Apache Spark ${spark_version} para ETL..."
-
-  sudo apt-get update
-  sudo apt-get install -y openjdk-11-jdk
-
-  if [ ! -d "$spark_java_home" ]; then
-    error "Nao encontrei o Java 11 em $spark_java_home depois de instalar openjdk-11-jdk."
-  fi
-
-  mkdir -p "$spark_apps_dir"
-
-  if [ -d "$spark_install_dir" ]; then
-    warn "Ja existe uma instalacao do Spark em $spark_install_dir. Vou manter a pasta atual e apenas garantir a configuracao do shell."
-  else
-    temp_dir="$(mktemp -d)"
-
-    if ! wget -O "$temp_dir/$spark_archive" "$spark_url"; then
-      warn "Nao consegui baixar em $spark_url. Tentando archive oficial da Apache..."
-      wget -O "$temp_dir/$spark_archive" "$spark_fallback_url"
-    fi
-
-    tar -xzf "$temp_dir/$spark_archive" -C "$temp_dir"
-    mv "$temp_dir/$spark_dirname" "$spark_install_dir"
-    rm -rf "$temp_dir"
-  fi
-
-  mkdir -p "$spark_install_dir/conf"
-
-  cat > "$spark_install_dir/conf/spark-env.sh" <<EOF
-export JAVA_HOME="$spark_java_home"
-export SPARK_LOCAL_IP=127.0.0.1
-export SPARK_LOCAL_HOSTNAME=localhost
-EOF
-
-  spark_block="export SPARK_HOME=\"$spark_install_dir\"
-export JAVA_HOME=\"$spark_java_home\"
-export PATH=\"\$PATH:\$SPARK_HOME/bin\"
-export SPARK_LOCAL_IP=127.0.0.1
-export SPARK_LOCAL_HOSTNAME=localhost
-export PYSPARK_PYTHON=python3"
-
-  upsert_shell_block "$HOME/.zshrc" "WSL DEV ENV - SPARK" "$spark_block"
-  upsert_shell_block "$HOME/.bashrc" "WSL DEV ENV - SPARK" "$spark_block"
-
-  warn "O Spark vai usar o OpenJDK 11 em $spark_java_home, alinhado ao tutorial do trabalho."
-  warn "Abra uma nova sessao e valide o Spark com: spark-submit --version"
 }
 
 install_python_tools() {
@@ -888,16 +725,6 @@ java -version
 sdk current java
 echo
 
-echo "[Spark]"
-if command -v spark-submit >/dev/null 2>&1; then
-  echo "SPARK_HOME=${SPARK_HOME:-nao definido}"
-  echo "JAVA_HOME=${JAVA_HOME:-nao definido}"
-  spark-submit --version 2>&1 | sed -n '1,5p'
-else
-  echo "Spark nao configurado nesta sessao."
-fi
-echo
-
 echo "[Python]"
 python3 --version
 pip3 --version
@@ -982,10 +809,6 @@ Próximos passos:
 
    dev-doctor
 
-7. Se habilitou o Spark, valide:
-
-   spark-submit --version
-
 Conexões dos bancos para apps no Windows:
 
 Postgres no DBeaver:
@@ -1033,14 +856,12 @@ main() {
   mkdir -p "$DEV_DIR"
 
   configure_wsl
-  resolve_optional_components
   install_base_packages
   configure_git
   install_oh_my_zsh
   install_docker
   install_nvm_node
   install_sdkman_java
-  install_optional_spark
   install_python_tools
   install_go
   create_dev_infra

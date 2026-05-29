@@ -11,8 +11,7 @@ param(
     [bool]$InstallGamingApps = $true,
     [bool]$InstallDevGuiApps = $true,
     [bool]$InstallWindowManager = $true,
-    [bool]$InstallSpark = $false,
-    [bool]$ConfigureWsl = $true,
+    [object]$ConfigureWsl = $null,
     [bool]$RemoveOneDrive = $false,
     [bool]$AutoReboot = $false,
     [switch]$ContinueAfterReboot
@@ -53,6 +52,43 @@ function Write-Warn {
 function Write-Fail {
     param([string]$Message)
     Write-Host "[FAIL] $Message" -ForegroundColor Red
+}
+
+function Test-CanPrompt {
+    try {
+        return [Environment]::UserInteractive -and $null -ne $Host.UI -and $null -ne $Host.UI.RawUI
+    } catch {
+        return $false
+    }
+}
+
+function Read-YesNoChoice {
+    param(
+        [string]$PromptMessage,
+        [bool]$DefaultValue = $true
+    )
+
+    $choicesHint = if ($DefaultValue) { "[S/n]" } else { "[s/N]" }
+
+    while ($true) {
+        $answer = Read-Host "$PromptMessage $choicesHint"
+
+        if ([string]::IsNullOrWhiteSpace($answer)) {
+            return $DefaultValue
+        }
+
+        switch -Regex ($answer.Trim().ToLowerInvariant()) {
+            "^(true|1|s|sim|y|yes)$" {
+                return $true
+            }
+            "^(false|0|n|nao|não|no)$" {
+                return $false
+            }
+            default {
+                Write-Warn "Resposta inválida. Digite s ou n."
+            }
+        }
+    }
 }
 
 function Test-NvidiaGpu {
@@ -131,6 +167,50 @@ function Resolve-OptionalInstallChoices {
     } else {
         Write-Warn "Ferramentas NVIDIA serão puladas."
     }
+
+    if ($null -eq $ConfigureWsl) {
+        if (Test-CanPrompt) {
+            Write-Section "Configuração do WSL"
+            $script:ConfigureWsl = Read-YesNoChoice "Deseja habilitar e configurar o WSL agora?" $true
+        } else {
+            $script:ConfigureWsl = $true
+            Write-Warn "Não consegui perguntar sobre o WSL neste contexto. Vou manter o padrão e configurar o WSL. Use -ConfigureWsl `$false para pular."
+        }
+    } elseif ($ConfigureWsl -is [bool]) {
+        $script:ConfigureWsl = [bool]$ConfigureWsl
+    } else {
+        switch -Regex ($ConfigureWsl.ToString().Trim().ToLowerInvariant()) {
+            "^(true|1|s|sim|y|yes)$" {
+                $script:ConfigureWsl = $true
+                break
+            }
+            "^(false|0|n|nao|não|no)$" {
+                $script:ConfigureWsl = $false
+                break
+            }
+            "^(ask|prompt)$" {
+                if (Test-CanPrompt) {
+                    Write-Section "Configuração do WSL"
+                    $script:ConfigureWsl = Read-YesNoChoice "Deseja habilitar e configurar o WSL agora?" $true
+                } else {
+                    $script:ConfigureWsl = $true
+                    Write-Warn "Não consegui perguntar sobre o WSL neste contexto. Vou manter o padrão e configurar o WSL. Use -ConfigureWsl `$false para pular."
+                }
+                break
+            }
+            default {
+                Write-Fail "Valor inválido para -ConfigureWsl: $ConfigureWsl. Use `$true, `$false ou ask."
+                Stop-Transcript | Out-Null
+                exit 1
+            }
+        }
+    }
+
+    if ($ConfigureWsl) {
+        Write-Ok "WSL será configurado."
+    } else {
+        Write-Warn "WSL será pulado."
+    }
 }
 
 function Test-IsAdmin {
@@ -179,7 +259,7 @@ function Register-ResumeAfterReboot {
     if ($WslSetupUrl) { $args += "-WslSetupUrl `"$WslSetupUrl`"" }
     if ($DotfilesRepo) { $args += "-DotfilesRepo `"$DotfilesRepo`"" }
     $args += "-InstallNvidiaTools `$$InstallNvidiaTools"
-    if ($InstallSpark) { $args += "-InstallSpark `$true" }
+    $args += "-ConfigureWsl `$$ConfigureWsl"
     if ($AutoReboot) { $args += "-AutoReboot `$true" }
 
     $cmd = "powershell.exe " + ($args -join " ")
@@ -983,13 +1063,8 @@ function Configure-WslDistro {
 
     if ($WslSetupUrl) {
         Invoke-Safely "Rodar setup WSL remoto" {
-            $sparkEnv = ""
-            if ($InstallSpark) {
-                $sparkEnv = "INSTALL_SPARK=true "
-            }
-
             try {
-                wsl -d $WslDistro -u $safeUser -- bash -lc "curl -fsSL '$WslSetupUrl' | ${sparkEnv}bash"
+                wsl -d $WslDistro -u $safeUser -- bash -lc "curl -fsSL '$WslSetupUrl' | bash"
                 Assert-NativeSuccess "Rodar setup Linux no WSL"
             } finally {
                 wsl -d $WslDistro -u root -- bash -lc "rm -f /etc/sudoers.d/$safeUser-bootstrap"
@@ -1032,7 +1107,11 @@ function Final-Cleanup {
         Write-Host "3. NVIDIA: ferramentas puladas; rode novamente com -InstallNvidiaTools `$true se quiser instalar."
     }
     Write-Host "4. Docker Desktop pode pedir logout/reboot para habilitar integração WSL."
-    Write-Host "5. Se o WSL pediu reboot, rode o script de novo ou deixe o RunOnce continuar."
+    if ($ConfigureWsl) {
+        Write-Host "5. Se o WSL pediu reboot, rode o script de novo ou deixe o RunOnce continuar."
+    } else {
+        Write-Host "5. WSL pulado; rode novamente com -ConfigureWsl `$true se quiser configurar."
+    }
 }
 
 Create-RestorePointSafe
